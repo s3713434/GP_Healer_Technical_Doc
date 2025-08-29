@@ -421,10 +421,10 @@ graph LR
     end
 
     subgraph "Bundle Structure"
-        B --> |entry[0]| P
-        B --> |entry[1]| PR
-        B --> |entry[2]| E
-        B --> |entry[3]| C
+        B -- entry 0 --> P
+        B -- entry 1 --> PR
+        B -- entry 2 --> E
+        B -- entry 3 --> C
     end
 ```
 
