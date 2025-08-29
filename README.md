@@ -300,3 +300,413 @@ Project includes `docker-compose.yml` for local development environment.
 5. **Modular Architecture**: Clear code organization and responsibility separation
 6. **Error Handling**: Comprehensive error handling and user feedback
 7. **Responsive Design**: Modern user interface
+
+# MBS Pro Claim System Architecture Diagrams
+
+## 1. High-Level System Architecture
+
+```mermaid
+graph TB
+    subgraph "Frontend Layer"
+        A[Web App - Next.js]
+        B[Claim Builder UI]
+        C[Voice Input Component]
+        D[Document Viewer]
+    end
+
+    subgraph "API Gateway Layer"
+        E[NestJS API Gateway]
+        F[Authentication & Validation]
+    end
+
+    subgraph "Business Logic Layer"
+        G[Claim Service]
+        H[Document Generator Service]
+        I[Rules Engine Service]
+    end
+
+    subgraph "FHIR Layer"
+        J[FHIR Resource Builders]
+        K[HAPI FHIR Client]
+        L[HAPI FHIR Server]
+    end
+
+    subgraph "Data Layer"
+        M[Supabase Database]
+        N[Local MBS Catalog]
+        O[OpenAI API]
+    end
+
+    A --> E
+    B --> G
+    C --> G
+    D --> H
+    E --> F
+    F --> G
+    F --> H
+    F --> I
+    G --> J
+    G --> K
+    K --> L
+    G --> M
+    G --> N
+    H --> M
+    H --> O
+    I --> M
+```
+
+## 2. Claim Processing Data Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant A as API
+    participant C as Claim Service
+    participant B as FHIR Builders
+    participant H as HAPI Client
+    participant S as Supabase
+    participant L as HAPI Server
+
+    U->>F: Select MBS Items + Voice Input
+    F->>A: POST /api/claim/build
+    A->>C: buildClaim(dto)
+    C->>S: getMbsMetadata(codes)
+    S-->>C: MBS metadata
+    C->>B: buildClaim()
+    B-->>C: FHIR Claim Resource
+    C->>H: postResource(claim)
+    H->>L: POST /fhir/Claim
+    L-->>H: Validation Result
+    H-->>C: HAPI Response
+    C-->>A: Claim + Validation
+    A-->>F: FHIR Preview
+    F-->>U: Display FHIR Data
+
+    Note over U,F: User reviews and submits
+    U->>F: Submit Claim
+    F->>A: POST /api/claim/submit
+    A->>C: buildAndSubmit(dto)
+    C->>S: createClaim(claimData)
+    S-->>C: Stored Claim
+    C-->>A: Success Response
+    A-->>F: Submission Confirmation
+    F-->>U: Success Message
+```
+
+## 3. FHIR Resource Relationship Diagram
+
+```mermaid
+graph LR
+    subgraph "FHIR Resources"
+        P[Patient]
+        PR[Practitioner]
+        E[Encounter]
+        C[Claim]
+        CI[Claim Item]
+        CN[Claim Note]
+        B[Bundle]
+    end
+
+    subgraph "Resource References"
+        C --> P
+        C --> PR
+        C --> E
+        C --> CI
+        C --> CN
+        B --> P
+        B --> PR
+        B --> E
+        B --> C
+    end
+
+    subgraph "Bundle Structure"
+        B --> |entry[0]| P
+        B --> |entry[1]| PR
+        B --> |entry[2]| E
+        B --> |entry[3]| C
+    end
+```
+
+## 4. Detailed Claim Service Architecture
+
+```mermaid
+graph TB
+    subgraph "Claim Service Core"
+        CS[ClaimService]
+        CI[buildClaimItems]
+        CN[buildClaimNotes]
+        MM[getMbsMetadata]
+    end
+
+    subgraph "FHIR Builders"
+        CB[Claim Builder]
+        EB[Encounter Builder]
+        BB[Bundle Builder]
+    end
+
+    subgraph "External Integrations"
+        HC[HAPI Client]
+        SB[Supabase Service]
+        OC[OpenAI Client]
+    end
+
+    subgraph "Data Models"
+        BCD[BuildClaimDto]
+        SBD[SubmitBundleDto]
+        SI[SelectedItemDto]
+        CM[ClaimMetaDto]
+    end
+
+    CS --> CI
+    CS --> CN
+    CS --> MM
+    CS --> CB
+    CS --> EB
+    CS --> BB
+    CS --> HC
+    CS --> SB
+    CS --> OC
+
+    BCD --> CS
+    SBD --> CS
+    SI --> CI
+    CM --> CN
+```
+
+## 5. Bundle Submission Flow
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant A as API
+    participant C as Claim Service
+    participant B as Bundle Builder
+    participant H as HAPI Client
+    participant L as HAPI Server
+
+    F->>A: POST /api/claim/bundle/submit
+    A->>C: submitBundle(dto)
+
+    Note over C: Auto-create Resources
+    C->>B: Generate Patient URN
+    C->>B: Generate Practitioner URN
+    C->>B: Build Encounter
+    C->>B: Build Claim
+
+    Note over C: Create Transaction Bundle
+    C->>B: buildTransactionBundle()
+    B-->>C: FHIR Bundle
+
+    C->>H: postBundle(bundle)
+    H->>L: POST /fhir/
+    L-->>H: Bundle Response
+    H-->>C: HAPI Result
+    C-->>A: Success Response
+    A-->>F: Bundle Created
+```
+
+## 6. Voice-to-Text Integration
+
+```mermaid
+graph LR
+    subgraph "Voice Input"
+        V[Voice Input Component]
+        SR[Speech Recognition]
+        T[Transcript]
+    end
+
+    subgraph "Integration"
+        N[Notes State]
+        D[Draft Store]
+        C[Claim Builder]
+    end
+
+    subgraph "Processing"
+        VT[Voice Transcript]
+        AP[Apply Transcript]
+        CL[Clear Transcript]
+    end
+
+    V --> SR
+    SR --> T
+    T --> VT
+    VT --> AP
+    AP --> N
+    N --> D
+    D --> C
+    VT --> CL
+    CL --> T
+```
+
+## 7. MBS Data Flow Architecture
+
+```mermaid
+graph TB
+    subgraph "Data Sources"
+        MBS[MBS Catalog]
+        SB[Supabase MBS Data]
+        LC[Local Constants]
+    end
+
+    subgraph "Data Processing"
+        GS[getMbsMetadata]
+        FM[Fallback Mechanism]
+        MM[Meta Mapping]
+    end
+
+    subgraph "Output"
+        CI[Claim Items]
+        PR[Pricing]
+        MD[Metadata]
+    end
+
+    MBS --> GS
+    SB --> GS
+    LC --> FM
+    GS --> MM
+    FM --> MM
+    MM --> CI
+    MM --> PR
+    MM --> MD
+```
+
+## 8. Error Handling Architecture
+
+```mermaid
+graph TB
+    subgraph "Error Sources"
+        V[Validation Errors]
+        H[HAPI Errors]
+        S[Supabase Errors]
+        O[OpenAI Errors]
+    end
+
+    subgraph "Error Handling"
+        FE[Frontend Error Display]
+        BE[Backend Error Filter]
+        HE[HTTP Error Handler]
+        CE[Custom Error Types]
+    end
+
+    subgraph "Error Types"
+        BE[BadRequestException]
+        IE[InternalServerErrorException]
+        FE[FhirHttpError]
+        VE[ValidationException]
+    end
+
+    V --> BE
+    H --> HE
+    S --> BE
+    O --> BE
+    BE --> CE
+    HE --> CE
+    CE --> FE
+```
+
+## 9. API Endpoint Architecture
+
+```mermaid
+graph LR
+    subgraph "Claim Endpoints"
+        CB[POST /claim/build]
+        CS[POST /claim/submit]
+        BS[POST /claim/bundle/submit]
+        GS[GET /claim/stats]
+        GA[GET /claim]
+        GP[GET /claim/patient/:id]
+    end
+
+    subgraph "Document Endpoints"
+        DG[POST /doc-generator/generate]
+    end
+
+    subgraph "Rules Endpoints"
+        RV[POST /rules/validate-selection]
+    end
+
+    subgraph "MBS Endpoints"
+        MG[GET /mbs/*]
+    end
+
+    CB --> CS
+    CS --> BS
+    GS --> GA
+    GA --> GP
+```
+
+## 10. Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph "Development Environment"
+        DC[Docker Compose]
+        API[API Container]
+        WEB[Web Container]
+        HAPI[HAPI Container]
+        DB[Supabase Local]
+    end
+
+    subgraph "Production Environment"
+        PS[Production Server]
+        API_P[API Service]
+        WEB_P[Web Service]
+        HAPI_P[HAPI Service]
+        SB_P[Supabase Cloud]
+    end
+
+    subgraph "External Services"
+        OA[OpenAI API]
+        FH[FHIR Validators]
+    end
+
+    DC --> API
+    DC --> WEB
+    DC --> HAPI
+    DC --> DB
+
+    PS --> API_P
+    PS --> WEB_P
+    PS --> HAPI_P
+    PS --> SB_P
+
+    API_P --> OA
+    HAPI_P --> FH
+```
+
+## Key Technical Components
+
+### FHIR Resource Builders
+
+- **Claim Builder**: Creates FHIR Claim resources with MBS codes
+- **Encounter Builder**: Generates Encounter resources for patient visits
+- **Bundle Builder**: Assembles transaction bundles for batch operations
+
+### Data Flow Patterns
+
+1. **Single Claim Flow**: Direct claim creation with existing encounter
+2. **Bundle Flow**: Automatic encounter + claim creation in single transaction
+3. **Preview Flow**: FHIR generation without persistence
+4. **Validation Flow**: HAPI server validation with fallback
+
+### Integration Points
+
+- **HAPI FHIR Server**: FHIR compliance validation
+- **Supabase**: Patient, practitioner, and claim data persistence
+- **OpenAI**: Intelligent document generation
+- **Web Speech API**: Voice-to-text functionality
+
+### Error Handling Strategy
+
+- **Graceful Degradation**: Local fallbacks when external services fail
+- **Structured Errors**: FHIR-compliant error responses
+- **User Feedback**: Clear error messages and recovery suggestions
+
+### Performance Optimizations
+
+- **Lazy Loading**: FHIR data generation on demand
+- **Caching**: MBS metadata caching in Supabase
+- **Batch Operations**: Transaction bundles for multiple resources
+- **Async Processing**: Non-blocking voice recognition and document generation
+
